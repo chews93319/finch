@@ -28,13 +28,16 @@ VDE_INSTALL ?= /opt/finch
 ARCH ?= $(shell uname -m)
 SUPPORTED_ARCH = false
 LICENSEDIR := $(OUTDIR)/license-files
-VERSION ?= $(shell git describe --match 'v[0-9]*' --dirty='.modified' --always --tags)
+VERSION ?= $(shell git describe --match 'v[0-9]*' --dirty='.modified'  --abbrev=0 --always --tags)
 GITCOMMIT ?= $(shell git rev-parse HEAD)$(shell test -z "$(git status --porcelain)" || echo .m)
 VERSION_INJECTION := -X $(PACKAGE)/pkg/version.Version=$(VERSION)
 VERSION_INJECTION += -X $(PACKAGE)/pkg/version.GitCommit=$(GITCOMMIT)
 VERSION_INJECTION += -X $(PACKAGE)/pkg/version.GitCommit=$(GITCOMMIT)
 LDFLAGS = "-w $(VERSION_INJECTION)"
 MIN_MACOS_VERSION ?= 11.0
+
+FINCH_DAEMON_LOCATION_ROOT ?= $(FINCH_OS_IMAGE_LOCATION_ROOT)/finch-daemon
+FINCH_DAEMON_LOCATION ?= $(FINCH_DAEMON_LOCATION_ROOT)/finch-daemon
 
 GOOS ?= $(shell $(GO) env GOOS)
 ifeq ($(GOOS),windows)
@@ -55,7 +58,7 @@ endif
 
 # This variable is used to inject the version of Lima (via ldflags) to be used with Lima's
 # osutil.LimaUser function.
-LIMA_TAG=$(shell cd deps/finch-core/src/lima && git describe --match 'v[0-9]*' --dirty='.modified' --always --tags)
+LIMA_TAG=$(shell cd deps/finch-core/src/lima && git describe --match 'v[0-9]*' --dirty='.modified'  --abbrev=0 --always --tags)
 LIMA_VERSION := $(patsubst v%,%,$(LIMA_TAG))
 # This value isn't used on Linux, but the symbol is currently defined on all platforms, so
 # it doesn't hurt to always inject it right now.
@@ -75,7 +78,7 @@ endif
 
 FINCH_CORE_DIR := $(CURDIR)/deps/finch-core
 
-remote-all: arch-test finch install.finch-core-dependencies finch.yaml networks.yaml config.yaml
+remote-all: arch-test finch install.finch-core-dependencies finch.yaml networks.yaml config.yaml $(OUTDIR)/finch-daemon/finch@.service
 
 ifeq ($(BUILD_OS), Windows_NT)
 include Makefile.windows
@@ -167,6 +170,9 @@ finch-all:
 
 .PHONY: release
 release: check-licenses all download-licenses
+
+$(OUTDIR)/finch-daemon/finch@.service:
+	cp finch@.service $(OUTDIR)/finch-daemon/finch@.service
 
 .PHONY: coverage
 coverage:
@@ -302,6 +308,32 @@ test-e2e-container: create-report-dir
 .PHONY: test-e2e-vm
 test-e2e-vm: create-report-dir
 	go test -ldflags $(LDFLAGS) -timeout 2h ./e2e/vm -test.v -ginkgo.v -ginkgo.timeout=2h -ginkgo.flake-attempts=3 -ginkgo.json-report=$(REPORT_DIR)/$(RUN_ID)-$(RUN_ATTEMPT)-e2e-vm-report.json --installed="$(INSTALLED)" --registry="$(REGISTRY)"
+
+GINKGO = go run github.com/onsi/ginkgo/v2/ginkgo
+# Common ginkgo options: -v for verbose mode, --focus="test name" for running single tests
+GFLAGS ?= --race --randomize-all --randomize-suites
+
+ifeq ($(INSTALLED),true)
+DAEMON_DOCKER_HOST := "unix:///Applications/Finch/lima/data/finch/sock/finch.sock"
+else
+DAEMON_DOCKER_HOST := "unix://$(OUTDIR)/lima/data/finch/sock/finch.sock"
+endif
+
+.PHONY: test-e2e-daemon
+test-e2e-daemon:
+	-@$(OUTDIR)/bin/$(BINARYNAME) vm stop -f || true
+	-@$(OUTDIR)/bin/$(BINARYNAME) vm remove -f
+	-@$(OUTDIR)/bin/$(BINARYNAME) vm init
+
+	cd $(FINCH_CORE_DIR)/src/finch-daemon && \
+	STATIC=1 GOOS=linux GOARCH=$(GOARCH) make && \
+	DOCKER_HOST=$(DAEMON_DOCKER_HOST) \
+	DOCKER_API_VERSION="v1.41" \
+	TEST_E2E=1 \
+	go test ./e2e -test.v -ginkgo.v -ginkgo.randomize-all -ginkgo.json-report=$(REPORT_DIR)/$(RUN_ID)-$(RUN_ATTEMPT)-e2e-daemon-report.json \
+	  --subject="$(OUTDIR)/bin/$(BINARYNAME)" \
+	  --daemon-context-subject-prefix="$(OUTDIR)/lima/bin/limactl shell finch sudo" \
+	  --daemon-context-subject-env="LIMA_HOME=$(OUTDIR)/lima/data"
 
 .PHONY: test-benchmark
 test-benchmark:

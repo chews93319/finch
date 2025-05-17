@@ -57,6 +57,9 @@ jobs:
     runs-on: [self-hosted, windows, amd64, release]
     timeout-minutes: 100
     steps:
+      - name: Clean GitHub runner workspace
+        run: |
+          Remove-Item -Path "${{ github.workspace }}\*" -Recurse -Force -ErrorAction SilentlyContinue
       - name: Configure git CRLF settings
         run: |
           git config --global core.autocrlf false
@@ -69,7 +72,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install awscli
-      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
@@ -80,13 +83,13 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
         with:
           role-to-assume: ${{ secrets.WINDOWS_ROLE }}
           role-session-name: windows-msi
           aws-region: ${{ secrets.WINDOWS_REGION }}
       - name: Remove Finch VM
-        timeout-minutes: 2
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/cleanup_wsl.ps1
       - name: Clean up previous files
@@ -136,7 +139,7 @@ jobs:
               throw "Failed after $maxRetries attempts."
           }
       - name: configure aws credentials for upload signed MSI to installer bucket
-        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
         with:
           role-to-assume: ${{ secrets.ROLE }}
           role-session-name: windows-msi
@@ -147,7 +150,7 @@ jobs:
           aws s3 cp "./msi-builder/build/signed/Finch-$tag.msi" "s3://${{ secrets.INSTALLER_PRIVATE_BUCKET_NAME }}/Finch-$tag.msi" --no-progress
       - name: Remove Finch VM and Clean Up Previous Environment
         if: ${{ always() }}
-        timeout-minutes: 2
+        timeout-minutes: 5
         shell: pwsh
         run: |
           ./scripts/cleanup_wsl.ps1
@@ -164,6 +167,9 @@ jobs:
     runs-on: [self-hosted, windows, amd64, release]
     timeout-minutes: 180
     steps:
+      - name: Clean GitHub runner workspace
+        run: |
+          Remove-Item -Path "${{ github.workspace }}\*" -Recurse -Force -ErrorAction SilentlyContinue
       - name: Configure git CRLF settings
         run: |
           git config --global core.autocrlf false
@@ -176,7 +182,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install awscli
-      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
@@ -193,13 +199,13 @@ jobs:
           echo "has_creds=$has_creds" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
           exit 0 # if $has_creds is false, powershell will exit with code 1 and this step will fail
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
         with:
           role-to-assume: ${{ secrets.ROLE }}
           role-session-name: msi-test
           aws-region: ${{ secrets.REGION }}
       - name: Remove Finch VM
-        timeout-minutes: 2
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/cleanup_wsl.ps1
       - name: Clean up previous files
@@ -239,7 +245,7 @@ jobs:
             $env:INSTALLED="true"
             make test-e2e-vm
       - name: Remove Finch VM
-        timeout-minutes: 2
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/cleanup_wsl.ps1
       - name: Run container e2e tests
@@ -267,7 +273,7 @@ jobs:
           }
       - name: Remove Finch VM and Clean Up Previous Environment
         if: ${{ always() }}
-        timeout-minutes: 2
+        timeout-minutes: 5
         shell: pwsh
         run: |
           ./scripts/cleanup_wsl.ps1
